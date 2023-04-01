@@ -19,7 +19,7 @@ spark: SparkSession = spark_session()
 data: DataFrame = updata(spark)
 
 
-@st.cache
+@st.cache_data
 def beds_data(start_date: dt.date, end_date: dt.date) -> np.ndarray:
     return np.array(
         data.select(
@@ -93,7 +93,7 @@ def history_data() -> DataFrame:
     )
 
 
-@st.cache
+@st.cache_data
 def dates_data() -> np.ndarray:
     return np.array(
         data.select(
@@ -110,7 +110,7 @@ def dates_data() -> np.ndarray:
     ).reshape(1, -1)[0]
 
 
-@st.cache
+@st.cache_data
 def deaths_data(start_date: dt.date, end_date: dt.date) -> np.ndarray:
     return np.array(
         data.select(
@@ -138,7 +138,7 @@ def deaths_data(start_date: dt.date, end_date: dt.date) -> np.ndarray:
 
 
 # Plots
-@st.cache
+@st.cache_data
 def map_plot(
     locations: np.ndarray,
     values: np.ndarray,
@@ -146,6 +146,7 @@ def map_plot(
     bed_type: str
 ) -> Figure:
 
+    st.write('Mapa de ocupacion hospitalaria')
     fig = px.choropleth(
         locations=locations,
         color=values,
@@ -153,22 +154,22 @@ def map_plot(
         color_continuous_scale=pallette,
         scope='usa',
         labels={'locations':'Estado','color': bed_type},
-        title='Mapa de ocupacion hospitalaria',
     )
 
     fig.update_layout(
         geo_scope='usa',
-        margin=dict(t=0, b=0, l=0, r=0)
+        margin=dict(t=0, b=0, l=0, r=0),
     )
 
     return fig
 
 
-@st.cache(allow_output_mutation=True)
+@st.cache_data
 def deaths_plot(dates: np.ndarray, deaths: np.ndarray) -> Figure:
 
     fig = Figure()
 
+    st.write('(Barras) Muertes totales. (Linea) Muertes acumuladas')
     fig.add_trace(px.histogram(
         x=dates,
         y=deaths,
@@ -182,33 +183,39 @@ def deaths_plot(dates: np.ndarray, deaths: np.ndarray) -> Figure:
         y=deaths.cumsum() / 20,
         color_discrete_sequence=['grey'],
         title="Muertes acumuladas"
-    ).data[0])
-    fig.update_layout(margin=dict(t=0, b=0, l=0, r=0))
+    ).data[0]) 
+    fig.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=True)
 
     return fig
 
 
-@st.cache
+@st.cache_data
 def history_plot(dates, values, toggle: str) -> Figure:
 
     if toggle == "icu_beds":
+        value = "Cama icu"
         color = px.colors.sequential.OrRd[::-1]
     if toggle == "common_beds":
+        value = "Cama comun"
         color = px.colors.sequential.PuBu[::-1]
     if toggle == "deaths":
+        value = "Muertes"
         color = px.colors.sequential.Greys[::-1]
 
-    fig = px.line(
+    fig = px.histogram(
         x=dates,
         y=values,
+        nbins=80,
+        opacity=0.75,
         color_discrete_sequence=color,
+        labels={'y': value, 'x': 'Tiempo'}
     )
     fig.update_layout(margin=dict(t=0, b=0, l=0, r=0))
     return fig
 
 
-@st.cache
-def pie_plot(df: pd.DataFrame, toggle: str) -> Figure:
+@st.cache_data
+def top5(df: pd.DataFrame, toggle: str) -> Figure:
 
     if toggle == "icu_beds":
         value = "Cama icu"
@@ -222,10 +229,12 @@ def pie_plot(df: pd.DataFrame, toggle: str) -> Figure:
         value = "Muertes"
         color = px.colors.sequential.Greys
 
-    fig = px.pie(
+    fig = px.bar(
         df[:5],
-        values=value,
-        names="Estado",
+        y="Estado",
+        x=value,
+        text=value,
+        color="Estado",
         color_discrete_sequence=color[::-1]
     )
     fig.update_layout(margin=dict(t=0, b=0, l=0, r=0))
@@ -273,7 +282,7 @@ def run():
         deaths_date: np.ndarray = deaths_data(start_date, end_date)[:, 1]
         total_deaths: np.ndarray = deaths_data(start_date, end_date)[:, 2]
 
-        select_map = st.radio("Selecciona un mapa", ("Camas comunes", "Camas UCI", "Muertes"))
+        select_map = st.radio("Selecciona un tipo de dato", ("Camas comunes", "Camas UCI", "Muertes"))
 
         mapa, deaths, df = st.columns((10, 12, 3))
 
@@ -298,18 +307,19 @@ def run():
                     'UCI',
                 ), use_container_width=True)
 
-
             with df:
+
                 dframe = (
                     pd.DataFrame({"Estado": beds_state, "Cama icu": icu_beds})
                     .sort_values("Cama icu", ascending=False)
                     .reset_index(drop=True)
                 )
                 st.write(
-                    dframe,
+                    dframe[:10].style.hide_index().to_html(),
                     width=400,
                     height=1000,
-                    use_container_width=True
+                    use_container_width=True,
+                    unsafe_allow_html=True,
                 )
 
         elif select_map == "Camas comunes":
@@ -333,15 +343,14 @@ def run():
                     .reset_index(drop=True)
                 )
                 st.write(
-                    dframe,
+                        dframe[:10].style.hide_index().to_html(),
                     width=400,
                     height=1000,
-                    use_container_width=True
+                    use_container_width=True,
+                    unsafe_allow_html=True,
                 )
 
         else:
-            print('debug select muertes')
-
             history_toggle = "deaths"
 
             with mapa:
@@ -353,25 +362,26 @@ def run():
                 ), use_container_width=True)
 
             with df:
+
                 dframe = (
                     pd.DataFrame({"Estado": beds_state, "Muertes": deaths_beds})
                     .sort_values("Muertes", ascending=False)
                     .reset_index(drop=True)
                 )
                 st.write(
-                    dframe,
+                    dframe[:10].style.hide_index().to_html(),
                     width=400,
                     height=1000,
-                    use_container_width=True
+                    use_container_width=True,
+                    unsafe_allow_html=True,
                 )
-
 
 
     placeholder2 = st.empty()
     with placeholder2.container():
 
         option_state = st.selectbox('Selecciona un Estado', sorted(beds_state))
-        history, pie = st.columns((14, 10))
+        history, bar = st.columns((14, 10))
 
         x_history: np.ndarray = (
             np.array(
@@ -398,6 +408,7 @@ def run():
         )
 
         with history:
+            st.write(f'Dato historico de {option_state}')
             st.plotly_chart(history_plot(
                 x_history,
                 y_history,
@@ -405,19 +416,16 @@ def run():
             ), use_container_width=True)
 
 
-        with pie:
-            st.plotly_chart(pie_plot(
+        with bar:
+            st.write(f'Top 5')
+            st.plotly_chart(top5(
                 dframe,
                 history_toggle
             ), use_container_width=True)
 
-    # image = Image.open('./correlacion_camas_muertes.png')
-
-    # st.image(image, caption='Sunrise by the mountains')
-
-    st.subheader(consigna1)
-    st.subheader(consigna2)
-    st.subheader(consigna3)
+    # st.subheader(consigna1)
+    # st.subheader(consigna2)
+    # st.subheader(consigna3)
     # st.subheader(consigna4)
     # st.subheader(consigna5)
     # st.subheader(consigna6)
